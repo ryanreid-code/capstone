@@ -1,0 +1,311 @@
+---
+title: "Wine Quality Analysis"
+author: "Ryan Reid"
+date: "2021"
+output: 
+  html_document: default
+  pdf_document: default
+---
+
+## 1. Introduction
+
+I enjoy drinking red wine and was interested to discover which properties of red wines contributed most to wine quality. Fortunately, the UCI machine learning repository offers a clean dataset of red wine properties and the corresponding quality score - perfect! The dataset is related to red variants of the Portuguese "Vinho Verde" wine. Unfortunately there is no data about grape types, wine brand, wine selling price, etc.
+
+The following report will look at the properties of wine and examine how they impact overall quality. With that in mind, I will develop a machine learning model to predict wine quality given a known set of wine properties.
+
+## 2. Initial Analysis
+
+### 2.1 Preparing the Dataset
+
+Citation for dataset used:
+P. Cortez, A. Cerdeira, F. Almeida, T. Matos and J. Reis. Modeling wine preferences by data mining from physicochemical properties. In Decision Support Systems, Elsevier, 47(4):547-553, 2009.
+
+```{r}
+
+#Loading dataset
+
+wine <- read.csv("https://raw.githubusercontent.com/ryanreid-code/capstone/main/winequality-red.csv")
+
+```
+
+```{r echo=FALSE}
+
+#Preparing libraries
+
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+if(!require(class)) install.packages("class", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(corrplot)) install.packages("corrplot", repos = "http://cran.us.r-project.org")
+
+library(dplyr)
+library(ggplot2)
+library(randomForest)
+library(class)
+library(caret)
+library(corrplot)
+
+```
+
+### 2.2 Exploring the Dataset
+
+The dataset is quite clean, with 1,599 red wines assigned a quality rating based on 11 features (chemical properties). Those 11 features are:
+
+Inputs (based on physicochemical tests):
+
+1. fixed acidity
+2. volatile acidity
+3. citric acid
+4. residual sugar
+5. chlorides
+6. free sulfur dioxide
+7. total sulfur dioxide
+8. density
+9. pH
+10. sulphates
+11. alcohol
+
+Outputs (based on sensory data):
+
+* quality (score between 0 and 10)
+
+```{r}
+
+head(wine)
+summary(wine)
+mean(wine$quality)
+
+```
+
+```{r echo=FALSE}
+
+ggplot(data = wine, aes(quality)) + geom_histogram(breaks= seq(2, 8, by=1),
+                                                   col= "black", fill= "dark red") + 
+                                                   labs(title= "Histogram for Quality")
+
+```
+
+While quality is technically scored on a scale of 0 to 10, the minimum quality score was 3 and the maximum was 8. The average of all scores is 5.636. Let's look at some of the more common characteristics that are talked about by wine sommeliers and printed on the labels of bottles sold in stores; alcohol, sulphates, residual sugar, and acidity.
+
+#### Alcohol
+
+The average alcohol content is 10.4% and higher alcohol content tends to lead to higher quality wine. The majority of wines have at least 9% alcohol, with the quantity of wines decreasing as alcohol goes up. The highest alcohol content is nearly 15%.
+
+```{r echo=FALSE}
+
+summary(wine$alcohol)
+
+ggplot(data= wine, aes(alcohol)) + geom_histogram(breaks= seq(8, 16, by=1),
+                                                  col= "black", fill= "dark red") + 
+                                                  labs(title= "Histogram for Alcohol")
+
+ggplot(data = wine, aes(y = alcohol, x = quality)) + geom_line(stat='summary')
+
+```
+
+
+#### Sulphates
+
+The average sulphate content is 0.658 and higher sulphate content tends to lead to higher quality wine. While some wines have sulphate levels as high as 2, the majority of wines have sulphate levels below 1.
+
+```{r echo=FALSE}
+
+summary(wine$sulphates)
+
+ggplot(data= wine, aes(sulphates)) + geom_histogram(breaks= seq(0, 2, by=.1),
+                                                  col= "black", fill= "dark red") + 
+                                                  labs(title= "Histogram for Sulphates")
+
+ggplot(data = wine, aes(y = sulphates, x = quality)) + geom_line(stat='summary')
+
+```
+
+#### Residual Sugar
+
+Residual sugar is the amount of sugar remaining after fermentation stops. It's rare to find wines with less than 1 gram/liter of residual sugar, and 75% of all wines have residual sugar below 2.6 grams/liter.
+
+Residual sugar doesn't appear to correlate with quality. There are wines all across the sweetness spectrum at each quality level, however you don't tend to see as many very sweet wines with high quality scores. The highest residual sugar level is nearly 15 grams/liter, however wines sweeter than 10 grams/liter are quite rare.
+
+```{r echo=FALSE}
+
+summary(wine$residual.sugar)
+
+ggplot(data= wine, aes(residual.sugar)) + geom_histogram(breaks= seq(0, 16, by=1),
+                                                    col= "black", fill= "dark red") + 
+                                                    labs(title= "Histogram for Residual Sugar")
+
+ggplot(data = wine, aes(y = residual.sugar, x = quality)) + geom_line(stat='summary')
+
+ggplot(data = wine, aes(y = residual.sugar, x = quality)) + geom_point()
+
+```
+
+
+#### pH
+
+The average pH level is 3.3 and a lower pH level (more acidity) tends to lead to higher quality wine. The pH levels of these red wines appear to be normally distributed around the mean, with the vast majority falling between 3.0 and 3.6 pH.
+
+```{r echo=FALSE}
+
+summary(wine$pH)
+
+ggplot(data= wine, aes(pH)) + geom_histogram(breaks= seq(2, 4, by=.1),
+                                                         col= "black", fill= "dark red") + 
+                                                         labs(title= "Histogram for pH (acidity)")
+
+ggplot(data = wine, aes(y = pH, x = quality)) + geom_line(stat='summary')
+
+```
+
+#### Volatile Acidity
+
+We've seen that more acidic wines tend to receive higher quality scores, however volatile acidity is clearly undesirable in wine. Volatile acidity measures the amount of acetic acid in wine, which at too high of levels can lead to an unpleasant, vinegar taste.
+
+```{r echo=FALSE}
+
+summary(wine$volatile.acidity)
+
+ggplot(data= wine, aes(volatile.acidity)) + geom_histogram(breaks= seq(0, 2, by=.1),
+                                                         col= "black", fill= "dark red") + 
+                                                         labs(title= "Histogram for Volatile Acidity")
+
+ggplot(data = wine, aes(y = volatile.acidity, x = quality)) + geom_line(stat='summary')
+
+```
+
+#### How are the features of wine related?
+
+The corrplot shows that alcohol, sulphates, and citric acid have positive correlation with quality, while density, sulfur dioxide, and volatile acidity have negative correlation with quality.
+
+```{r echo=FALSE}
+
+corrplot(cor(wine))
+
+```
+
+## 3 Modeling Approach and Results
+
+The data was split into train and test sets (80/20) for modeling. This problem is well suited to KNN and Random Forest modeling techniques. Let's see how these two models compare using the red wine dataset.
+
+```{r echo=FALSE}
+
+# Split into test and train sets
+set.seed(123, sample.kind ="Rounding")
+test_index <- createDataPartition(y = wine$quality, times = 1, p = 0.2, list = FALSE)
+train_wines <- wine[-test_index,]
+test_wines <- wine[test_index,]
+
+```
+
+### KNN
+
+The k-nearest neighbors algorithm (KNN) will predict wine quality based on the quality score of wines with similar properties. We can train a model using the six most highly correlated features: alcohol, sulphates, citric acid, density, sulfur dioxide, and volatile acidity. 
+
+```{r}
+
+# KNN using 6 key features
+
+set.seed(123, sample.kind ="Rounding")
+train_x <- subset(train_wines, select= c(alcohol, sulphates, total.sulfur.dioxide, volatile.acidity, density, citric.acid))
+test_x <- subset(test_wines, select= c(alcohol, sulphates, total.sulfur.dioxide, volatile.acidity, density, citric.acid))
+train_y <- train_wines$quality
+test_y <- test_wines$quality
+
+knn3_pred <- knn(train_x, test_x, train_y, k=3)
+knn3_cm <- table(knn3_pred, test_y)
+
+knn1_pred <- knn(train_x, test_x, train_y, k=1)
+knn1_cm <- table(knn1_pred, test_y)
+
+knn3_cmstat <- confusionMatrix(knn3_cm)
+knn1_cmstat <- confusionMatrix(knn1_cm)
+
+knn3_cmstat
+knn1_cmstat
+
+```
+
+KNN with 6 features is around 60% accurate at predicting the correct wine quality score out of 10 (KNN1 60%, KNN3 56%). The 6 features didn't include residual sugar or pH. How does adding 2 more features (for a total of 8 features) impact model accuracy?
+
+```{r}
+
+# KNN with 8 features. Added residual sugar and pH
+
+set.seed(123, sample.kind ="Rounding")
+train8_x <- subset(train_wines, select= c(alcohol, sulphates, total.sulfur.dioxide, volatile.acidity, density, citric.acid, residual.sugar, pH))
+test8_x <- subset(test_wines, select= c(alcohol, sulphates, total.sulfur.dioxide, volatile.acidity, density, citric.acid, residual.sugar, pH))
+train_y <- train_wines$quality
+test_y <- test_wines$quality
+
+knn3_pred <- knn(train8_x, test8_x, train_y, k=3)
+knn3_cm <- table(knn3_pred, test_y)
+
+knn1_pred <- knn(train8_x, test8_x, train_y, k=1)
+knn1_cm <- table(knn1_pred, test_y)
+
+knn3_cmstat <- confusionMatrix(knn3_cm)
+knn1_cmstat <- confusionMatrix(knn1_cm)
+
+knn3_cmstat
+knn1_cmstat
+
+```
+
+With 8 features, KNN1 is 58% accurate and KNN3 is 55% accurate. Doesn't look like adding the extra features contributes much. Likely better to stick with 6 for model simplicity.
+
+Now let’s see if we can do even better with the random forest algorithm.
+
+### Random Forests
+
+The random forest algorithm predicts wine quality by merging a large number of decision trees in to a single model. 
+
+```{r}
+
+set.seed(123, sample.kind ="Rounding")
+wine_rf <- randomForest(as.factor(quality)~alcohol+ sulphates+ total.sulfur.dioxide+ volatile.acidity+ density+ citric.acid+ residual.sugar+ pH, data=train_wines, importance=TRUE, ntree = 500)
+wine_rf
+
+varImpPlot(wine_rf)
+
+plot(wine_rf, ylim=c(0,0.36))
+wine_rf$confusion
+
+```
+
+The error rate declines as more trees are added to the forest (greater ntree), however the error rate is minimized with fewer than 100 trees. The most important variables are: alcohol, sulphates, sulfur dioxide, and volatile acidity. 
+
+The Random Forest model is quite effective, with an error rate of 30%. Let's see how this model performs on the test data.
+
+## Outcome and Conclusion
+
+```{r}
+
+set.seed(123, sample.kind ="Rounding")
+final_prediction <- predict(wine_rf, test_wines)
+
+confMat <- table(actual = test_wines$quality, predicted = final_prediction)
+confMat
+
+accuracy <- sum(diag(confMat))/sum(confMat)
+accuracy
+
+```
+
+The Random Forest model is 67% accurate, which is an improvement over KNN (KNN1 with 6 features - 60%). The model is quite effective at predicting wine quality - I definitely couldn't "taste" a wine (or see a list of it's properties) and guess the the correct quality score on a scale from one to ten 67% of the time!
+
+Here are a few takeaways to keep in mind next time you're shopping for wine:
+
+* Stay away from wines with a low alcohol percentage. Higher alcohol is almost always better.
+* Sulphates aren't a bad thing. Sulphates are natural compounds produced during fermentation (more can be added to preserve freshness)
+* Volatile acidity (acetic acid) will spoil a wine. Avoid wines that have been poorly stored or exposed to air.
+* There are good wines across all sweetness levels (residual sugars) - drink whatever suits your taste!
+
+Thanks for reading,
+
+Ryan
+
+
+### Data Source
+
+P. Cortez, A. Cerdeira, F. Almeida, T. Matos and J. Reis. Modeling wine preferences by data mining from physicochemical properties. In Decision Support Systems, Elsevier, 47(4):547-553, 2009.
